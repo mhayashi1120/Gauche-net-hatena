@@ -9,39 +9,44 @@
 (test-module 'net.hatena)
 
 
-(define *cred* (make <hatena-cred>
-				 :username (cdr (assq 'user settings))
-				 :password (cdr (assq 'password settings))))
+(use srfi-19)
+(debug-print-width #f)
 
 (define *ns-binding* '(h . "http://www.w3.org/2005/Atom"))
 
-(let* ((settings
-		(with-input-from-file "./.test-settings.scm"
-		  read))
-	   (entry-id #f)
-	   (sxml #f))
+(define *settings*
+  (with-input-from-file "./.test-settings.scm"
+	read))
 
-  (test* "hatena-diary/sxml" #t (pair? (hatena-diary/sxml *cred*)))
-  (test* "hatena-diary/draft/sxml" #t (pair? (hatena-diary/draft/sxml *cred*)))
-  (test* "hatena-diary/blog/sxml" #t (pair? (hatena-diary/blog/sxml *cred*)))
+(define *cred* (make <hatena-cred>
+				 :username (cdr (assq 'user *settings*))
+				 :password (cdr (assq 'password *settings*))))
 
-  
-   ;; hatena-diary/draft/post/sxml
-   ;; hatena-diary/draft/put/sxml
-   ;; hatena-diary/draft/get/sxml
-   ;; hatena-diary/draft/delete
+(define-macro (test-wait* name expected expr)
+  `(begin
+	 ;; avoid sequential access.
+	 (sys-sleep 5)
+	 (test* ,name ,expected ,expr)))
 
-   ;; hatena-diary/draft/post/sxml
-   ;; hatena-diary/draft/publish/sxml
+(test-wait* "hatena-diary/sxml" #t (pair? (hatena-diary/sxml *cred*)))
+(test-wait* "hatena-diary/draft/sxml" #t (pair? (hatena-diary/draft/sxml *cred*)))
+(test-wait* "hatena-diary/blog/sxml" #t (pair? (hatena-diary/blog/sxml *cred*)))
 
-   ;; hatena-diary/blog/delete
+(let1 entry-id (hatena-diary/draft/post/id *cred* "TEST1 件名" "CONTENT1 内容" (current-date))
+  (test-wait* "hatena-diary/draft/put/sxml" #t (pair? (hatena-diary/draft/put/sxml *cred* entry-id "TEST2 件名" "CONTENT2 内容" (current-date))))
+  (test-wait* "hatena-diary/draft/get/sxml" #t (pair? (hatena-diary/draft/get/sxml *cred* entry-id)))
+  (hatena-diary/draft/delete *cred* entry-id))
 
-   ;; hatena-diary/blog/post/sxml
-   ;; hatena-diary/blog/put/sxml
-   ;; hatena-diary/blog/get/sxml
-   ;; hatena-diary/blog/delete
+(let1 draft-id (hatena-diary/draft/post/id *cred* "TEST3 件名" "CONTENT3 内容" (current-date))
+  (receive (date blog-id) (hatena-diary/draft/publish/id *cred* draft-id)
+	(test-wait* "hatena-diary/blog/get/sxml" #t (pair? (hatena-diary/blog/get/sxml *cred* date blog-id)))
+	(hatena-diary/blog/delete *cred* date blog-id)))
 
-   )
+(receive (date blog-id) (hatena-diary/blog/post/id *cred* "TEST4 件名" "CONTENT4 内容" (current-date))
+  (test-wait* "hatena-diary/blog/get/sxml" #t (pair? (hatena-diary/blog/get/sxml *cred* date blog-id)))
+  (test-wait* "hatena-diary/blog/put/sxml" #t (pair? (hatena-diary/blog/put/sxml *cred* date blog-id "TEST5 件名" "CONTENT5 内容" (current-date))))
+  (test-wait* "hatena-diary/blog/get/sxml" #t (pair? (hatena-diary/blog/get/sxml *cred* date blog-id)))
+  (hatena-diary/blog/delete *cred* date blog-id))
 
 
 (test-end)

@@ -177,33 +177,31 @@
   #`"/,(ref cred 'username)/atom/draft")
 
 (define (draft-entry-path cred entry-id)
-  #`"/,(draft-path cred)/,|entry-id|")
+  #`",(draft-path cred)/,|entry-id|")
 
 (define (blog-path cred)
   #`"/,(ref cred 'username)/atom/blog")
 
 (define (blog-entry-path cred date entry-id)
-  #`"/,(blog-path cred)/,(blog-date->string date)/,|entry-id|")
+  #`",(blog-path cred)/,(blog-date->string date)/,|entry-id|")
 
 (define (create-blog-sxml title content updated)
   (let* ((sxml (create-sxml-header))
 		 (children (sxml:content-raw sxml))
 		 (entry (create-blog-entry title content updated)))
-	(sxml:change-content! sxml (append children (list entry)))
-	sxml))
+	(sxml:change-content sxml (append children (list entry)))))
 
 ;; FIXME any method?
 (define (create-sxml-header)
-  `(*TOP* (*PI* xml "version=\"1.0\" encoding=\"utf-8\"")))
+  (list '*TOP* (list '*PI* 'xml "version=\"1.0\" encoding=\"utf-8\"")))
 
 ;; FIXME create xml node like this???
 (define (create-blog-entry title content updated)
   (let1 entry '(entry)
 	(sxml:add-attr! entry '(xmlns "http://purl.org/atom/ns#"))
-	(sxml:change-content! entry `((title ,title)
-								  (content ,content (@ (type "text/plain")))
-								  (updated ,(date->string updated "~4"))))
-	entry))
+	(sxml:change-content entry `((title ,title)
+								 (content ,content (@ (type "text/plain")))
+								 (updated ,(date->string updated "~4"))))))
 
 (define-method blog-date->string ((date <string>))
   date)
