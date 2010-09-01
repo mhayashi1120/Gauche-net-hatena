@@ -12,8 +12,6 @@
 (use srfi-19)
 (debug-print-width #f)
 
-(define *ns-binding* '(h . "http://www.w3.org/2005/Atom"))
-
 (define *settings*
   (with-input-from-file "./.test-settings.scm"
 	read))
