@@ -38,8 +38,15 @@
    hatena-diary/blog/post/sxml
    hatena-diary/blog/put/sxml
    hatena-diary/blog/delete
+
+   hatena-diary/draft/post/id
+   hatena-diary/blog/post/id
+   hatena-diary/draft/publish/id
    ))
 (select-module net.hatena)
+
+(define-constant *ns-binding* 
+  '(h . "http://www.w3.org/2005/Atom"))
 
 ;;TODO post/put return date and id
 ;; define-class?
@@ -77,8 +84,12 @@
 ;;
 
 ;; service list
-(define (hatena-diary/sxml cred user)
-  (call/wsse->sxml cred 'get #`"/,|user|/atom"))
+(define (hatena-diary/sxml cred)
+  (call/wsse->sxml cred 'get #`"/,(ref cred 'username)/atom"))
+
+;;
+;; Hatena draft methods
+;;
 
 ;; select draft entries 
 (define (hatena-diary/draft/sxml cred :key (page #f))
@@ -94,6 +105,12 @@
   (call/wsse->sxml cred 'post (draft-path cred)
 				   :request-sxml (create-blog-sxml title content updated)))
 
+;; create new draft entry and return created id
+(define (hatena-diary/draft/post/id cred title content updated)
+  (let* ((sxml (hatena-diary/draft/post/sxml cred title content updated))
+		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
+	((#/-([0-9]+)$/ id) 1)))
+
 ;; update existing draft entry
 (define (hatena-diary/draft/put/sxml cred entry-id title content updated)
   (call/wsse->sxml cred 'put (draft-entry-path cred entry-id)
@@ -108,6 +125,17 @@
   (call/wsse->sxml cred 'put (draft-entry-path cred entry-id) 
 				   :opts '(:X-HATENA-PUBLISH 1)))
 
+;; publish draft to blog entry
+(define (hatena-diary/draft/publish/id cred entry-id)
+  (let* ((sxml (hatena-diary/draft/publish/sxml cred entry-id))
+		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml)))
+		 (match (#/-([0-9]+)-([0-9]+)$/ id)))
+	(values (match 1) (match 2))))
+
+;;
+;; Hatena blog methods
+;;
+
 ;; select blog entries (Non titled entry is not listed.)
 (define (hatena-diary/blog/sxml cred :key (page #f))
   (call/wsse->sxml cred 'get (blog-path cred)
@@ -121,6 +149,13 @@
 (define (hatena-diary/blog/post/sxml cred title content updated)
   (call/wsse->sxml cred 'post (blog-path cred)
 				   :request-sxml (create-blog-sxml title content updated)))
+
+;; create new blog entry and return created date and id
+(define (hatena-diary/blog/post/id cred title content updated)
+   (let* ((sxml (hatena-diary/blog/post/sxml cred title content updated))
+		  (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml)))
+		  (match (#/-([0-9]+)-([0-9]+)$/ id)))
+	 (values (match 1) (match 2))))
 
 ;; update existing blog entry
 (define (hatena-diary/blog/put/sxml cred date entry-id title content updated)
