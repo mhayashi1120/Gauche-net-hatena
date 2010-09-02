@@ -1,1 +1,8 @@
 .test-settings.scm
+Gauche-net-hatena.gpd
+Makefile
+VERSION
+autom4te.cache
+config.log
+config.status
+configure
