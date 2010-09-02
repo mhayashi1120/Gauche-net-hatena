@@ -6,7 +6,7 @@
 ;; http://d.hatena.ne.jp/keyword/%A4%CF%A4%C6%A4%CA%A5%C0%A5%A4%A5%A2%A5%EA%A1%BCAtomPub
 ;; http://www.ietf.org/rfc/rfc5023.txt
 
-(define-module net.hatena
+(define-module net.hatena.diary
   (use rfc.http)
   (use file.util)
   (use oasis.wsse)
@@ -43,7 +43,7 @@
    hatena-diary/blog/post/id
    hatena-diary/draft/publish/id
    ))
-(select-module net.hatena)
+(select-module net.hatena.diary)
 
 (define-constant *ns-binding* 
   '(h . "http://www.w3.org/2005/Atom"))

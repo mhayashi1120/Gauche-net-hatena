@@ -4,9 +4,9 @@
 
 (use gauche.test)
 
-(test-start "net.hatena")
-(use net.hatena)
-(test-module 'net.hatena)
+(test-start "net.hatena.diary")
+(use net.hatena.diary)
+(test-module 'net.hatena.diary)
 
 
 (use srfi-19)
