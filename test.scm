@@ -3,11 +3,12 @@
 ;;;
 
 (use gauche.test)
+(use file.util)
 
 (test-start "net.hatena.diary")
+(load "./net/hatena/diary.scm")
 (use net.hatena.diary)
 (test-module 'net.hatena.diary)
-
 
 (use srfi-19)
 (debug-print-width #f)

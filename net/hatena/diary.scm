@@ -9,7 +9,6 @@
 (define-module net.hatena.diary
   (use rfc.http)
   (use file.util)
-  (use oasis.wsse)
   (use sxml.ssax)
   (use sxml.sxpath)
   (use sxml.serializer)
@@ -18,6 +17,7 @@
   (use srfi-19)
   (use text.tr)
   (use util.list)
+  (use net.hatena.util)
 
   (export
    <hatena-cred>
@@ -210,7 +210,6 @@
   (date->string date "~Y~m~d"))
 
 (define (call/wsse->sxml cred method path :key (request-sxml #f) (params #f) (opts '()))
-
   (define (call)
 	(let ((wsse (wsse-header (ref cred 'username) (ref cred 'password)))
 		  (host (or (and (ref cred 'group) #`"(ref cred 'group).g.hatena.ne.jp")
@@ -252,3 +251,4 @@
 		   :status status :headers headers :body body
 		   body)))
 
+(provide "net/hatena/diary")
