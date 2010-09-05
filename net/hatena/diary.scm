@@ -5,6 +5,7 @@
 ;; http://d.hatena.ne.jp/keyword/%A4%CF%A4%C6%A4%CA%B5%BB%BD%D1%CA%B8%BD%F1
 ;; http://d.hatena.ne.jp/keyword/%A4%CF%A4%C6%A4%CA%A5%C0%A5%A4%A5%A2%A5%EA%A1%BCAtomPub
 ;; http://www.ietf.org/rfc/rfc5023.txt
+;; http://www.hyuki.com/techinfo/hatena_diary_writer.html
 
 (define-module net.hatena.diary
   (use rfc.http)
@@ -18,6 +19,9 @@
   (use text.tr)
   (use util.list)
   (use net.hatena.util)
+  (use srfi-1)
+  (use rfc.cookie)
+  (use gauche.charconv)
 
   (export
    <hatena-cred>
@@ -42,14 +46,14 @@
    hatena-diary/draft/post/id
    hatena-diary/blog/post/id
    hatena-diary/draft/publish/id
+
+   hatena-diary/blog/title&contents
    ))
 (select-module net.hatena.diary)
 
 (define-constant *ns-binding* 
   '(h . "http://www.w3.org/2005/Atom"))
 
-;;TODO post/put return date and id
-;; define-class?
 ;;TODO test group hatena
 ;;TODO blog GET return text/html..
 ;; hatena-diary/draft/{get,post,put} content should have been text 
@@ -166,6 +170,10 @@
 (define (hatena-diary/blog/delete cred date entry-id)
   (call/wsse->sxml cred 'delete (blog-entry-path cred date entry-id)))
 
+(define (hatena-diary/blog/title&contents cred date entry-id)
+  (with-web-session cred cookie
+	(web-hatena-text/title&contents cred cookie date entry-id)))
+
 ;;
 ;; Internal methods
 ;;
@@ -250,5 +258,124 @@
 	(error <hatena-api-error>
 		   :status status :headers headers :body body
 		   body)))
+
+;;
+;; web 
+;;
+
+(define (web-logout cookie)
+  (define (call)
+	(http-get "www.hatena.ne.jp" "/logout" 
+			  :no-redirect #t
+			  :Cookie cookie))
+
+  (define (retrieve status headers body)
+	(unless (string=? status "200")
+	  (error <hatena-api-error>
+			 :status status :headers headers :body body
+			 body))
+
+	headers)
+
+  (call-with-values call retrieve))
+
+(define (web-login cred)
+  (define (call)
+	(let1 query (http-compose-query #f (list 
+										(list :name (ref cred 'username)) 
+										(list :password (ref cred 'password)))
+									'utf-8)
+	  (http-post "www.hatena.ne.jp" "/login" query :no-redirect #t)))
+
+  (define (retrieve status headers body)
+	(unless (string=? status "200")
+	  (error <hatena-api-error>
+			 :status status :headers headers :body body
+			 body))
+	headers)
+
+  ;; create cookie string
+  (string-join
+   (construct-cookie-string
+	(filter
+	 (lambda (c)
+	   (and (string? (car c))
+			(member (car c) '("b" "rk"))))
+	 (concatenate
+	  (map
+	   (lambda (c)
+		 (parse-cookie-string (list-ref c 1)))
+	   (filter (lambda (x)
+				 (and (pair? x)
+					  (string-ci=? (car x) "set-cookie")))
+			   (call-with-values call retrieve))))))
+   "; "))
+
+;; http://www.ietf.org/rfc/rfc4627.txt
+;; can only parse flatten json
+(define (pseudo-parse-json string)
+  ;;TODO FIXME use json.scm
+  (define (pseudo-parser)
+	(if-let1 m (#/^[ \t]*\{(.*)\}[ \t]*$/ string)
+			 (let1 a (m 1)
+			   (let loop ((str a)
+						  (ret '()))
+				 (if (=  0 (string-length str))
+				   (reverse! ret)
+				   (begin
+					 (if-let1 m1 (#/^,?(\")?([^:\"]+)(\1)?:/ str)
+							  (let* ((key (m1 2))
+									 (val #f))
+								(set! str (string-copy str (rxmatch-end m1 0)))
+								(cond
+								 ;; avoid to break parenthese
+								 (((string->regexp "^\"((\\\\\"|[^\"])*)\"") str) =>
+								  (lambda (m2) (set! val (m2 1)) (set! str (string-copy str (rxmatch-end m2 0)))))
+								 ((#/^[0-9.]+/ str) =>
+								  (lambda (m2) (set! val (string->number (m2 0))) (set! str (string-copy str (rxmatch-end m2 0))))))
+								(set! ret (cons (cons key val) ret))
+								(loop str ret)))))))))
+
+  ;;FIXME 
+  (define (retrieve-escape string)
+	(read-from-string (string-append "\"" string "\"")))
+
+  (let1 alist (pseudo-parser)
+	(map
+	 (lambda (x)
+	   (if (and (pair? x) (string? (cdr x)))
+		 (cons (car x) (retrieve-escape (cdr x)))
+		 (cons (car x) (cdr x))))
+	 alist)))
+
+;;TODO https
+(define (web-hatena-text/title&contents cred cookie date entry-id)
+  (define (call)
+	(http-get "d.hatena.ne.jp" 
+			  #`"/,(ref cred 'username)/,|date|/,|entry-id|?mode=json&now=,(hatena-now)" 
+			  :no-redirect #t
+			  :Cookie cookie))
+	
+  (define (retrieve status headers body)
+	(unless (string=? status "200")
+	  (error <hatena-api-error>
+			 :status status :headers headers :body body
+			 body))
+
+	(let1 alist (pseudo-parse-json (ces-convert body 'euc-jp (gauche-character-encoding)))
+	  (values (assoc-ref alist "title") (assoc-ref alist "body"))))
+
+  (call-with-values call retrieve))
+
+(define (hatena-now)
+  (* (sys-time) 1000))
+
+;; (put 'with-web-session 'scheme-indent-function 2)
+(define-macro (with-web-session cred cookie . body)
+  `(let1 ,cookie (web-login ,cred)
+	 (unwind-protect
+	  (begin
+		,@body)
+	  (web-logout ,cookie))))
 
 (provide "net/hatena/diary")
