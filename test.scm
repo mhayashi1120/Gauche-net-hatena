@@ -45,6 +45,9 @@
   (test-wait* "hatena-diary/blog/get/sxml" #t (pair? (hatena-diary/blog/get/sxml *cred* date blog-id)))
   (test-wait* "hatena-diary/blog/put/sxml" #t (pair? (hatena-diary/blog/put/sxml *cred* date blog-id "TEST5 件名" "CONTENT5 内容" (current-date))))
   (test-wait* "hatena-diary/blog/get/sxml" #t (pair? (hatena-diary/blog/get/sxml *cred* date blog-id)))
+  (receive (title contents) (hatena-diary/blog/title&contents *cred* date blog-id)
+	(test-wait* "hatena-diary/blog/title&contents" "TEST5 件名" title)
+	(test-wait* "hatena-diary/blog/title&contents" "CONTENT5 内容" contents))
   (hatena-diary/blog/delete *cred* date blog-id))
 
 

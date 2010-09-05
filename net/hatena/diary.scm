@@ -83,6 +83,14 @@
   (regexp-replace-all* str #/%[\da-fA-F][\da-fA-F]/
                        (lambda (m) (string-upcase (m 0)))))
 
+;; (put 'with-web-session 'scheme-indent-function 2)
+(define-macro (with-web-session cred cookie . body)
+  `(let1 ,cookie (web-login ,cred)
+	 (unwind-protect
+	  (begin
+		,@body)
+	  (web-logout ,cookie))))
+
 ;;
 ;; Hatena interface methods
 ;;
@@ -369,13 +377,5 @@
 
 (define (hatena-now)
   (* (sys-time) 1000))
-
-;; (put 'with-web-session 'scheme-indent-function 2)
-(define-macro (with-web-session cred cookie . body)
-  `(let1 ,cookie (web-login ,cred)
-	 (unwind-protect
-	  (begin
-		,@body)
-	  (web-logout ,cookie))))
 
 (provide "net/hatena/diary")
