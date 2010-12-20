@@ -52,7 +52,7 @@
 (select-module net.hatena.diary)
 
 (define-constant *ns-binding* 
-  '(h . "http://www.w3.org/2005/Atom"))
+  '((h . "http://www.w3.org/2005/Atom")))
 
 ;;TODO test group hatena
 ;;TODO blog GET return text/html..
