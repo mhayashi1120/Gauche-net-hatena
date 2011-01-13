@@ -6,6 +6,7 @@
 ;; http://d.hatena.ne.jp/keyword/%A4%CF%A4%C6%A4%CA%A5%C0%A5%A4%A5%A2%A5%EA%A1%BCAtomPub
 ;; http://www.ietf.org/rfc/rfc5023.txt
 ;; http://www.hyuki.com/techinfo/hatena_diary_writer.html
+;; Gauche 0.9 or later
 
 (define-module net.hatena.diary
   (use rfc.http)
@@ -22,10 +23,12 @@
   (use srfi-1)
   (use rfc.cookie)
   (use gauche.charconv)
+  (use rfc.json)
 
   (export
    <hatena-cred>
    <hatena-api-error>
+   <hatena-blog-entry>
 
    hatena-diary/sxml
 
@@ -34,6 +37,7 @@
    hatena-diary/draft/post/sxml
    hatena-diary/draft/put/sxml
    hatena-diary/draft/delete
+   hatena-diary/draft/title&contents
 
    hatena-diary/draft/publish/sxml
 
@@ -48,6 +52,10 @@
    hatena-diary/draft/publish/id
 
    hatena-diary/blog/title&contents
+   hatena-diary-parse-blog-id
+   hatena-diary-parse-draft-id
+   hatena-diary/draft/entries
+   hatena-diary/blog/entries
    ))
 (select-module net.hatena.diary)
 
@@ -56,12 +64,24 @@
 
 ;;TODO test group hatena
 ;;TODO blog GET return text/html..
-;; hatena-diary/draft/{get,post,put} content should have been text 
+;; hatena-diary/draft/{get,post,put} content should be text 
 
 (define-class <hatena-cred> ()
   ((username :init-keyword :username)
    (password :init-keyword :password)
    (group :init-keyword :group :init-value #f)))
+
+(define-class <hatena-blog-entry> ()
+  ((draft? :init-keyword :draft?)
+   (updated :init-keyword :updated)
+   (published :init-keyword :published)
+   (date-id :init-keyword :date-id)   	; can be #f if draft
+   (entry-id :init-keyword :entry-id)	; can be #f
+   (edit-url :init-keyword :edit-url)
+   (published-url :init-keyword :published-url)
+   (author-name  :init-keyword :author-name)
+   (title  :init-keyword :title)
+   (content  :init-keyword :content)))
 
 (define-condition-type <hatena-api-error> <error> #f
   (status #f)
@@ -121,7 +141,7 @@
 (define (hatena-diary/draft/post/id cred title content updated)
   (let* ((sxml (hatena-diary/draft/post/sxml cred title content updated))
 		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
-	((#/-([0-9]+)$/ id) 1)))
+	(hatena-diary-parse-draft-id id)))
 
 ;; update existing draft entry
 (define (hatena-diary/draft/put/sxml cred entry-id title content updated)
@@ -140,9 +160,14 @@
 ;; publish draft to blog entry
 (define (hatena-diary/draft/publish/id cred entry-id)
   (let* ((sxml (hatena-diary/draft/publish/sxml cred entry-id))
-		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml)))
-		 (match (#/-([0-9]+)-([0-9]+)$/ id)))
-	(values (match 1) (match 2))))
+		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
+	(hatena-diary-parse-blog-id id)))
+
+(define (hatena-diary/draft/title&contents cred entry-id)
+  (let1 sxml (hatena-diary/draft/get/sxml cred entry-id)
+	(values
+	 ((nspath-car '("h:entry" "h:title" *text*)) sxml)
+	 ((nspath-car '("h:entry" "h:content" *text*)) sxml))))
 
 ;;
 ;; Hatena blog methods
@@ -165,9 +190,8 @@
 ;; create new blog entry and return created date and id
 (define (hatena-diary/blog/post/id cred title content updated)
    (let* ((sxml (hatena-diary/blog/post/sxml cred title content updated))
-		  (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml)))
-		  (match (#/-([0-9]+)-([0-9]+)$/ id)))
-	 (values (match 1) (match 2))))
+		  (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
+	 (hatena-diary-parse-blog-id id)))
 
 ;; update existing blog entry
 (define (hatena-diary/blog/put/sxml cred date entry-id title content updated)
@@ -183,8 +207,73 @@
 	(web-hatena-text/title&contents cred cookie date entry-id)))
 
 ;;
+;; Parsing methods
+;;
+
+(define (hatena-diary-parse-blog-id raw-id)
+  (if-let1 m (#/-([0-9]+)(?:-([0-9]+))?$/ raw-id)
+	(values (m 1) (m 2))
+	(values #f #f)))
+
+(define (hatena-diary-parse-draft-id raw-id)
+  ((#/-([0-9]+)$/ raw-id) 1))
+
+;;
+;; Utility methods
+
+;; select draft entries (Non titled entry is not listed.)
+(define (hatena-diary/draft/entries cred :key (page #f))
+  (create-entries cred #t :page page))
+
+;; select blog entries (Non titled entry is not listed.)
+(define (hatena-diary/blog/entries cred :key (page #f))
+  (create-entries cred #f :page page))
+
+;;
 ;; Internal methods
 ;;
+
+(define (nspath path)
+  (sxpath path *ns-binding*))
+
+(define (nspath-car path)
+  (let ((x (nspath path)))
+	(^a (let ((obj (x a)))
+		  (if (null? obj)
+			#f
+			(car obj))))))
+
+(define (create-entries cred draft? . opts)
+  (let* ((method (if draft? 
+				   hatena-diary/draft/sxml
+				   hatena-diary/blog/sxml))
+		 (idparser (if draft?
+					 (lambda (id) (values #f (hatena-diary-parse-draft-id id)))
+					 hatena-diary-parse-blog-id)))
+	(let1 sxml (apply method cred opts)
+	  (map
+	   (lambda (entry)
+		 (let1 id ((nspath-car '("h:id" *text*)) entry)
+		   (receive (date-id entry-id) (idparser id)
+			 (make <hatena-blog-entry>
+			   :draft? draft?
+			   :updated (atom-string->date ((nspath-car '("h:updated" *text*)) entry))
+			   :published (atom-string->date ((nspath-car '("h:published" *text*)) entry))
+			   :link ((nspath-car '("h:link" *text*)) entry)
+			   :date-id date-id
+			   :entry-id entry-id
+			   :edit-url ((nspath-car '("h:link[@rel='edit']" @ href *text*)) entry)
+			   :published-url ((nspath-car '("h:link[@rel='alternate']" @ href *text*)) entry)
+			   :author-name ((nspath-car '("h:author" "h:name" *text*)) entry)
+			   :title ((nspath-car '("h:title" *text*)) entry)
+			   :content ((nspath-car '("h:content" *text*)) entry)))))
+	   ((nspath '("h:feed" "h:entry")) sxml)))))
+
+(define (atom-string->date string)
+  (let1 format "~Y-~m-~dT~H:~M:~S~z"
+	(if-let1 m (#/([0-9]+):([0-9]+)$/ string)
+	  (string->date (string-append (m 'before) (m 1) (m 2)) format)
+	  (string->date string format))))
 
 (define (compose-query params)
   (%-fix (http-compose-query #f params 'utf-8)))
@@ -207,17 +296,19 @@
 		 (entry (create-blog-entry title content updated)))
 	(sxml:change-content sxml (append children (list entry)))))
 
-;; FIXME any method?
 (define (create-sxml-header)
   (list '*TOP* (list '*PI* 'xml "version=\"1.0\" encoding=\"utf-8\"")))
 
-;; FIXME create xml node like this???
+;;TODO text/plain or text/html?
 (define (create-blog-entry title content updated)
   (let1 entry '(entry)
 	(sxml:add-attr! entry '(xmlns "http://purl.org/atom/ns#"))
 	(sxml:change-content entry `((title ,title)
 								 (content ,content (@ (type "text/plain")))
 								 (updated ,(date->string updated "~4"))))))
+
+(define-method blog-date->string ((date <top>))
+  (x->string date))
 
 (define-method blog-date->string ((date <string>))
   date)
@@ -268,24 +359,8 @@
 		   body)))
 
 ;;
-;; web 
+;; web (Special feature)
 ;;
-
-(define (web-logout cookie)
-  (define (call)
-	(http-get "www.hatena.ne.jp" "/logout" 
-			  :no-redirect #t
-			  :Cookie cookie))
-
-  (define (retrieve status headers body)
-	(unless (string=? status "200")
-	  (error <hatena-api-error>
-			 :status status :headers headers :body body
-			 body))
-
-	headers)
-
-  (call-with-values call retrieve))
 
 (define (web-login cred)
   (define (call)
@@ -293,7 +368,7 @@
 										(list :name (ref cred 'username)) 
 										(list :password (ref cred 'password)))
 									'utf-8)
-	  (http-post "www.hatena.ne.jp" "/login" query :no-redirect #t)))
+	  (web-post "www.hatena.ne.jp" "/login" query :no-redirect #t)))
 
   (define (retrieve status headers body)
 	(unless (string=? status "200")
@@ -319,50 +394,39 @@
 			   (call-with-values call retrieve))))))
    "; "))
 
-;; http://www.ietf.org/rfc/rfc4627.txt
-;; can only parse flatten json
-(define (pseudo-parse-json string)
-  ;;TODO FIXME use json.scm
-  (define (pseudo-parser)
-	(if-let1 m (#/^[ \t]*\{(.*)\}[ \t]*$/ string)
-			 (let1 a (m 1)
-			   (let loop ((str a)
-						  (ret '()))
-				 (if (=  0 (string-length str))
-				   (reverse! ret)
-				   (begin
-					 (if-let1 m1 (#/^,?(\")?([^:\"]+)(\1)?:/ str)
-							  (let* ((key (m1 2))
-									 (val #f))
-								(set! str (string-copy str (rxmatch-end m1 0)))
-								(cond
-								 ;; avoid to break parenthese
-								 (((string->regexp "^\"((\\\\\"|[^\"])*)\"") str) =>
-								  (lambda (m2) (set! val (m2 1)) (set! str (string-copy str (rxmatch-end m2 0)))))
-								 ((#/^[0-9.]+/ str) =>
-								  (lambda (m2) (set! val (string->number (m2 0))) (set! str (string-copy str (rxmatch-end m2 0))))))
-								(set! ret (cons (cons key val) ret))
-								(loop str ret)))))))))
-
-  ;;FIXME 
-  (define (retrieve-escape string)
-	(read-from-string (string-append "\"" string "\"")))
-
-  (let1 alist (pseudo-parser)
-	(map
-	 (lambda (x)
-	   (if (and (pair? x) (string? (cdr x)))
-		 (cons (car x) (retrieve-escape (cdr x)))
-		 (cons (car x) (cdr x))))
-	 alist)))
-
-;;TODO https
-(define (web-hatena-text/title&contents cred cookie date entry-id)
+(define (web-logout cookie)
   (define (call)
-	(http-get "d.hatena.ne.jp" 
-			  #`"/,(ref cred 'username)/,|date|/,|entry-id|?mode=json&now=,(hatena-now)" 
+	(web-get "www.hatena.ne.jp" "/logout" 
 			  :no-redirect #t
 			  :Cookie cookie))
+
+  (define (retrieve status headers body)
+	(unless (string=? status "200")
+	  (error <hatena-api-error>
+			 :status status :headers headers :body body
+			 body))
+
+	headers)
+
+  (call-with-values call retrieve))
+
+(define (web-post . args)
+  (apply http-post args))
+
+(define (web-get . args)
+  (apply http-get args))
+
+;;TODO https
+;;FIXME cannot read no entry-id entry
+(define (web-hatena-text/title&contents cred cookie date entry-id)
+  (define (call)
+	(let ((user (ref cred 'username))
+		  (date-id (blog-date->string date))
+		  (entry-id (or entry-id "")))
+	  (web-get "d.hatena.ne.jp" 
+			   #`"/,|user|/,|date-id|/,|entry-id|?mode=json&now=,(hatena-now)" 
+			   :no-redirect #t
+			   :Cookie cookie)))
 	
   (define (retrieve status headers body)
 	(unless (string=? status "200")
@@ -370,7 +434,7 @@
 			 :status status :headers headers :body body
 			 body))
 
-	(let1 alist (pseudo-parse-json (ces-convert body 'euc-jp (gauche-character-encoding)))
+	(let1 alist (parse-json-string (ces-convert body 'euc-jp (gauche-character-encoding)))
 	  (values (assoc-ref alist "title") (assoc-ref alist "body"))))
 
   (call-with-values call retrieve))

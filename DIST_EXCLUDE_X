@@ -1,0 +1,4 @@
+DIST
+DIST_EXCLUDE_X
+.test-settings.scm
+./.git
