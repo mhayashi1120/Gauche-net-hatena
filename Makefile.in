@@ -26,7 +26,7 @@ LOCAL_PATHS = @LOCAL_PATHS@
 PACKAGE   = Gauche-net-hatena
 
 ARCHFILES = 
-SCMFILES  = $(srcdir)/net/hatena/diary.scm $(srcdir)/net/hatena/util.scm
+SCMFILES  = $(srcdir)/net/hatena/diary.scm $(srcdir)/net/hatena/util.scm $(srcdir)/net/hatena/diary/web.scm
 HEADERS   = 
 
 TARGET    = $(ARCHFILES)

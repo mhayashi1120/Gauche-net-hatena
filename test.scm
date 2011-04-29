@@ -57,6 +57,11 @@
 (test-end)
 
 
+(test-start "net.hatena.diary.web")
+(load "./net/hatena/diary/web.scm")
+(use net.hatena.diary.web)
+(test-module 'net.hatena.diary.web)
 
+(test-end)
 
 
