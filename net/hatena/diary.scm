@@ -2,8 +2,7 @@
 ;;; Hatena AtomPub access module
 ;;;
 
-;; http://d.hatena.ne.jp/keyword/%A4%CF%A4%C6%A4%CA%B5%BB%BD%D1%CA%B8%BD%F1
-;; http://d.hatena.ne.jp/keyword/%A4%CF%A4%C6%A4%CA%A5%C0%A5%A4%A5%A2%A5%EA%A1%BCAtomPub
+;; http://developer.hatena.ne.jp/ja/documents/diary/apis/atom
 ;; http://www.ietf.org/rfc/rfc5023.txt
 ;; http://www.hyuki.com/techinfo/hatena_diary_writer.html
 ;; Gauche 0.9 or later
@@ -31,31 +30,48 @@
    <hatena-blog-entry>
 
    hatena-diary/sxml
-
    hatena-diary/draft/sxml
    hatena-diary/draft/get/sxml
    hatena-diary/draft/post/sxml
    hatena-diary/draft/put/sxml
    hatena-diary/draft/delete
    hatena-diary/draft/title&contents
-
    hatena-diary/draft/publish/sxml
-
    hatena-diary/blog/sxml
    hatena-diary/blog/get/sxml
    hatena-diary/blog/post/sxml
    hatena-diary/blog/put/sxml
    hatena-diary/blog/delete
-
    hatena-diary/draft/post/id
    hatena-diary/blog/post/id
    hatena-diary/draft/publish/id
-
    hatena-diary/blog/title&contents
    hatena-diary-parse-blog-id
    hatena-diary-parse-draft-id
    hatena-diary/draft/entries
    hatena-diary/blog/entries
+
+   diary/sxml
+   diary/draft/sxml
+   diary/draft/get/sxml
+   diary/draft/post/sxml
+   diary/draft/put/sxml
+   diary/draft/delete
+   diary/draft/title&contents
+   diary/draft/publish/sxml
+   diary/blog/sxml
+   diary/blog/get/sxml
+   diary/blog/post/sxml
+   diary/blog/put/sxml
+   diary/blog/delete
+   diary/draft/post/id
+   diary/blog/post/id
+   diary/draft/publish/id
+   diary/blog/title&contents
+   diary-parse-blog-id
+   diary-parse-draft-id
+   diary/draft/entries
+   diary/blog/entries
    ))
 (select-module net.hatena.diary)
 
@@ -64,7 +80,7 @@
 
 ;;TODO test group hatena
 ;;TODO blog GET return text/html..
-;; hatena-diary/draft/{get,post,put} content should be text 
+;; diary/draft/{get,post,put} content should be text 
 
 (define-class <hatena-cred> ()
   ((username :init-keyword :username)
@@ -116,7 +132,7 @@
 ;;
 
 ;; service list
-(define (hatena-diary/sxml cred)
+(define (diary/sxml cred)
   (call/wsse->sxml cred 'get #`"/,(ref cred 'username)/atom"))
 
 ;;
@@ -124,47 +140,47 @@
 ;;
 
 ;; select draft entries 
-(define (hatena-diary/draft/sxml cred :key (page #f))
+(define (diary/draft/sxml cred :key (page #f))
   (call/wsse->sxml cred 'get (draft-path cred)
 				   :params (make-query-params page)))
 
 ;; select existing draft entry
-(define (hatena-diary/draft/get/sxml cred entry-id)
+(define (diary/draft/get/sxml cred entry-id)
   (call/wsse->sxml cred 'get (draft-entry-path cred entry-id)))
 
 ;; create new draft entry
-(define (hatena-diary/draft/post/sxml cred title content updated)
+(define (diary/draft/post/sxml cred title content updated)
   (call/wsse->sxml cred 'post (draft-path cred)
 				   :request-sxml (create-blog-sxml title content updated)))
 
 ;; create new draft entry and return created id
-(define (hatena-diary/draft/post/id cred title content updated)
-  (let* ((sxml (hatena-diary/draft/post/sxml cred title content updated))
+(define (diary/draft/post/id cred title content updated)
+  (let* ((sxml (diary/draft/post/sxml cred title content updated))
 		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
-	(hatena-diary-parse-draft-id id)))
+	(diary-parse-draft-id id)))
 
 ;; update existing draft entry
-(define (hatena-diary/draft/put/sxml cred entry-id title content updated)
+(define (diary/draft/put/sxml cred entry-id title content updated)
   (call/wsse->sxml cred 'put (draft-entry-path cred entry-id)
 				   :request-sxml (create-blog-sxml title content updated)))
 
 ;; delete existing draft entry (No error if entry exists or not)
-(define (hatena-diary/draft/delete cred entry-id)
+(define (diary/draft/delete cred entry-id)
   (call/wsse->sxml cred 'delete (draft-entry-path cred entry-id)))
 
 ;; publish draft to blog entry
-(define (hatena-diary/draft/publish/sxml cred entry-id)
+(define (diary/draft/publish/sxml cred entry-id)
   (call/wsse->sxml cred 'put (draft-entry-path cred entry-id) 
 				   :opts '(:X-HATENA-PUBLISH 1)))
 
 ;; publish draft to blog entry
-(define (hatena-diary/draft/publish/id cred entry-id)
-  (let* ((sxml (hatena-diary/draft/publish/sxml cred entry-id))
+(define (diary/draft/publish/id cred entry-id)
+  (let* ((sxml (diary/draft/publish/sxml cred entry-id))
 		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
-	(hatena-diary-parse-blog-id id)))
+	(diary-parse-blog-id id)))
 
-(define (hatena-diary/draft/title&contents cred entry-id)
-  (let1 sxml (hatena-diary/draft/get/sxml cred entry-id)
+(define (diary/draft/title&contents cred entry-id)
+  (let1 sxml (diary/draft/get/sxml cred entry-id)
 	(values
 	 ((nspath-car '("h:entry" "h:title" *text*)) sxml)
 	 ((nspath-car '("h:entry" "h:content" *text*)) sxml))))
@@ -174,35 +190,35 @@
 ;;
 
 ;; select blog entries (Non titled entry is not listed.)
-(define (hatena-diary/blog/sxml cred :key (page #f))
+(define (diary/blog/sxml cred :key (page #f))
   (call/wsse->sxml cred 'get (blog-path cred)
   				   :params (make-query-params page)))
 
 ;; select existing blog entry
-(define (hatena-diary/blog/get/sxml cred date entry-id)
+(define (diary/blog/get/sxml cred date entry-id)
   (call/wsse->sxml cred 'get (blog-entry-path cred date entry-id)))
 
 ;; create new blog entry
-(define (hatena-diary/blog/post/sxml cred title content updated)
+(define (diary/blog/post/sxml cred title content updated)
   (call/wsse->sxml cred 'post (blog-path cred)
 				   :request-sxml (create-blog-sxml title content updated)))
 
 ;; create new blog entry and return created date and id
-(define (hatena-diary/blog/post/id cred title content updated)
-   (let* ((sxml (hatena-diary/blog/post/sxml cred title content updated))
+(define (diary/blog/post/id cred title content updated)
+   (let* ((sxml (diary/blog/post/sxml cred title content updated))
 		  (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
-	 (hatena-diary-parse-blog-id id)))
+	 (diary-parse-blog-id id)))
 
 ;; update existing blog entry
-(define (hatena-diary/blog/put/sxml cred date entry-id title content updated)
+(define (diary/blog/put/sxml cred date entry-id title content updated)
   (call/wsse->sxml cred 'put (blog-entry-path cred date entry-id)
 				   :request-sxml (create-blog-sxml title content updated)))
 
 ;; delete existing blog entry (No error if entry exists or not)
-(define (hatena-diary/blog/delete cred date entry-id)
+(define (diary/blog/delete cred date entry-id)
   (call/wsse->sxml cred 'delete (blog-entry-path cred date entry-id)))
 
-(define (hatena-diary/blog/title&contents cred date entry-id)
+(define (diary/blog/title&contents cred date entry-id)
   (with-web-session cred cookie
 	(web-hatena-text/title&contents cred cookie date entry-id)))
 
@@ -210,23 +226,23 @@
 ;; Parsing methods
 ;;
 
-(define (hatena-diary-parse-blog-id raw-id)
+(define (diary-parse-blog-id raw-id)
   (if-let1 m (#/-([0-9]+)(?:-([0-9]+))?$/ raw-id)
 	(values (m 1) (m 2))
 	(values #f #f)))
 
-(define (hatena-diary-parse-draft-id raw-id)
+(define (diary-parse-draft-id raw-id)
   ((#/-([0-9]+)$/ raw-id) 1))
 
 ;;
 ;; Utility methods
 
 ;; select draft entries (Non titled entry is not listed.)
-(define (hatena-diary/draft/entries cred :key (page #f))
+(define (diary/draft/entries cred :key (page #f))
   (create-entries cred #t :page page))
 
 ;; select blog entries (Non titled entry is not listed.)
-(define (hatena-diary/blog/entries cred :key (page #f))
+(define (diary/blog/entries cred :key (page #f))
   (create-entries cred #f :page page))
 
 ;;
@@ -245,11 +261,11 @@
 
 (define (create-entries cred draft? . opts)
   (let* ((method (if draft? 
-				   hatena-diary/draft/sxml
-				   hatena-diary/blog/sxml))
+				   diary/draft/sxml
+				   diary/blog/sxml))
 		 (idparser (if draft?
-					 (lambda (id) (values #f (hatena-diary-parse-draft-id id)))
-					 hatena-diary-parse-blog-id)))
+					 (lambda (id) (values #f (diary-parse-draft-id id)))
+					 diary-parse-blog-id)))
 	(let1 sxml (apply method cred opts)
 	  (map
 	   (lambda (entry)
@@ -441,5 +457,27 @@
 
 (define (hatena-now)
   (* (sys-time) 1000))
+
+(define hatena-diary/sxml                    diary/sxml                )
+(define hatena-diary/draft/sxml              diary/draft/sxml          )
+(define hatena-diary/draft/get/sxml          diary/draft/get/sxml      )
+(define hatena-diary/draft/post/sxml         diary/draft/post/sxml     )
+(define hatena-diary/draft/put/sxml          diary/draft/put/sxml      )
+(define hatena-diary/draft/delete            diary/draft/delete        )
+(define hatena-diary/draft/title&contents    diary/draft/title&contents)
+(define hatena-diary/draft/publish/sxml      diary/draft/publish/sxml  )
+(define hatena-diary/blog/sxml               diary/blog/sxml           )
+(define hatena-diary/blog/get/sxml           diary/blog/get/sxml       )
+(define hatena-diary/blog/post/sxml          diary/blog/post/sxml      )
+(define hatena-diary/blog/put/sxml           diary/blog/put/sxml       )
+(define hatena-diary/blog/delete             diary/blog/delete         )
+(define hatena-diary/draft/post/id           diary/draft/post/id       )
+(define hatena-diary/blog/post/id            diary/blog/post/id        )
+(define hatena-diary/draft/publish/id        diary/draft/publish/id    )
+(define hatena-diary/blog/title&contents     diary/blog/title&contents )
+(define hatena-diary-parse-blog-id           diary-parse-blog-id       )
+(define hatena-diary-parse-draft-id          diary-parse-draft-id      )
+(define hatena-diary/draft/entries           diary/draft/entries       )
+(define hatena-diary/blog/entries            diary/blog/entries        )
 
 (provide "net/hatena/diary")
