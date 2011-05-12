@@ -8,21 +8,21 @@
 ;; Gauche 0.9 or later
 
 (define-module net.hatena.diary
-  (use rfc.http)
   (use file.util)
-  (use sxml.ssax)
-  (use sxml.sxpath)
-  (use sxml.serializer)
-  (use sxml.tools)
+  (use gauche.charconv)
+  (use net.hatena.util)
+  (use rfc.cookie)
+  (use rfc.http)
+  (use rfc.json)
+  (use srfi-1)
   (use srfi-13)
   (use srfi-19)
+  (use sxml.serializer)
+  (use sxml.ssax)
+  (use sxml.sxpath)
+  (use sxml.tools)
   (use text.tr)
   (use util.list)
-  (use net.hatena.util)
-  (use srfi-1)
-  (use rfc.cookie)
-  (use gauche.charconv)
-  (use rfc.json)
 
   (export
    <hatena-cred>
@@ -95,9 +95,9 @@
    (entry-id :init-keyword :entry-id)	; can be #f
    (edit-url :init-keyword :edit-url)
    (published-url :init-keyword :published-url)
-   (author-name  :init-keyword :author-name)
-   (title  :init-keyword :title)
-   (content  :init-keyword :content)))
+   (author-name :init-keyword :author-name)
+   (title :init-keyword :title)
+   (content :init-keyword :content)))
 
 (define-condition-type <hatena-api-error> <error> #f
   (status #f)
@@ -236,6 +236,7 @@
 
 ;;
 ;; Utility methods
+;;
 
 ;; select draft entries (Non titled entry is not listed.)
 (define (diary/draft/entries cred :key (page #f))
