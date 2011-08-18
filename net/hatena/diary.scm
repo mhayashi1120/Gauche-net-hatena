@@ -72,11 +72,14 @@
    diary-parse-draft-id
    diary/draft/entries
    diary/blog/entries
+
    ))
 (select-module net.hatena.diary)
 
 (define-constant *ns-binding* 
-  '((h . "http://www.w3.org/2005/Atom")))
+  '((atom . "http://www.w3.org/2005/Atom")
+    (app . "http://www.w3.org/2007/app")
+    (hatena . "http://www.hatena.ne.jp/info/xmlns#")))
 
 ;;TODO test group hatena
 ;;TODO blog GET return text/html..
@@ -98,34 +101,6 @@
    (author-name :init-keyword :author-name)
    (title :init-keyword :title)
    (content :init-keyword :content)))
-
-(define-condition-type <hatena-api-error> <error> #f
-  (status #f)
-  (headers #f)
-  (body #f))
-
-;;
-;; A convenience macro to construct query parameters, skipping
-;; if #f is given to the variable.
-;;
-
-(define-macro (make-query-params . vars)
-  `(cond-list
-    ,@(map (lambda (v)
-             `(,v `(,',(string-tr (x->string v) "-" "_") ,,v)))
-           vars)))
-
-(define (%-fix str)
-  (regexp-replace-all* str #/%[\da-fA-F][\da-fA-F]/
-                       (lambda (m) (string-upcase (m 0)))))
-
-;; (put 'with-web-session 'scheme-indent-function 2)
-(define-macro (with-web-session cred cookie . body)
-  `(let1 ,cookie (web-login ,cred)
-	 (unwind-protect
-	  (begin
-		,@body)
-	  (web-logout ,cookie))))
 
 ;;
 ;; Hatena interface methods
@@ -156,7 +131,7 @@
 ;; create new draft entry and return created id
 (define (diary/draft/post/id cred title content updated)
   (let* ((sxml (diary/draft/post/sxml cred title content updated))
-		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
+		 (id (car ((sxpath '("atom:entry" "atom:id" *text*) *ns-binding*) sxml))))
 	(diary-parse-draft-id id)))
 
 ;; update existing draft entry
@@ -176,14 +151,14 @@
 ;; publish draft to blog entry
 (define (diary/draft/publish/id cred entry-id)
   (let* ((sxml (diary/draft/publish/sxml cred entry-id))
-		 (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
+		 (id (car ((sxpath '("atom:entry" "atom:id" *text*) *ns-binding*) sxml))))
 	(diary-parse-blog-id id)))
 
 (define (diary/draft/title&contents cred entry-id)
   (let1 sxml (diary/draft/get/sxml cred entry-id)
 	(values
-	 ((nspath-car '("h:entry" "h:title" *text*)) sxml)
-	 ((nspath-car '("h:entry" "h:content" *text*)) sxml))))
+     ((nspath-car '("atom:entry" "atom:title" *text*)) sxml)
+     ((nspath-car '("atom:entry" "atom:content" *text*)) sxml))))
 
 ;;
 ;; Hatena blog methods
@@ -206,7 +181,7 @@
 ;; create new blog entry and return created date and id
 (define (diary/blog/post/id cred title content updated)
    (let* ((sxml (diary/blog/post/sxml cred title content updated))
-		  (id (car ((sxpath '("h:entry" "h:id" *text*) *ns-binding*) sxml))))
+		  (id (car ((sxpath '("atom:entry" "atom:id" *text*) *ns-binding*) sxml))))
 	 (diary-parse-blog-id id)))
 
 ;; update existing blog entry
@@ -219,8 +194,10 @@
   (call/wsse->sxml cred 'delete (blog-entry-path cred date entry-id)))
 
 (define (diary/blog/title&contents cred date entry-id)
-  (with-web-session cred cookie
-	(web-hatena-text/title&contents cred cookie date entry-id)))
+  (let1 sxml (diary/blog/get/sxml cred date entry-id)
+    (values
+     ((nspath-car '("atom:entry" "atom:title" *text*)) sxml)
+     ((nspath-car '("atom:entry" "hatena:syntax" *text*)) sxml))))
 
 ;;
 ;; Parsing methods
@@ -270,30 +247,27 @@
 	(let1 sxml (apply method cred opts)
 	  (map
 	   (lambda (entry)
-		 (let1 id ((nspath-car '("h:id" *text*)) entry)
+		 (let1 id ((nspath-car '("atom:id" *text*)) entry)
 		   (receive (date-id entry-id) (idparser id)
 			 (make <hatena-blog-entry>
 			   :draft? draft?
-			   :updated (atom-string->date ((nspath-car '("h:updated" *text*)) entry))
-			   :published (atom-string->date ((nspath-car '("h:published" *text*)) entry))
-			   :link ((nspath-car '("h:link" *text*)) entry)
+			   :updated (atom-string->date ((nspath-car '("atom:updated" *text*)) entry))
+			   :published (atom-string->date ((nspath-car '("atom:published" *text*)) entry))
+			   :link ((nspath-car '("atom:link" *text*)) entry)
 			   :date-id date-id
 			   :entry-id entry-id
-			   :edit-url ((nspath-car '("h:link[@rel='edit']" @ href *text*)) entry)
-			   :published-url ((nspath-car '("h:link[@rel='alternate']" @ href *text*)) entry)
-			   :author-name ((nspath-car '("h:author" "h:name" *text*)) entry)
-			   :title ((nspath-car '("h:title" *text*)) entry)
-			   :content ((nspath-car '("h:content" *text*)) entry)))))
-	   ((nspath '("h:feed" "h:entry")) sxml)))))
+			   :edit-url ((nspath-car '("atom:link[@rel='edit']" @ href *text*)) entry)
+			   :published-url ((nspath-car '("atom:link[@rel='alternate']" @ href *text*)) entry)
+			   :author-name ((nspath-car '("atom:author" "atom:name" *text*)) entry)
+			   :title ((nspath-car '("atom:title" *text*)) entry)
+			   :content ((nspath-car '("atom:content" *text*)) entry)))))
+	   ((nspath '("atom:feed" "atom:entry")) sxml)))))
 
 (define (atom-string->date string)
   (let1 format "~Y-~m-~dT~H:~M:~S~z"
 	(if-let1 m (#/([0-9]+):([0-9]+)$/ string)
 	  (string->date (string-append (m 'before) (m 1) (m 2)) format)
 	  (string->date string format))))
-
-(define (compose-query params)
-  (%-fix (http-compose-query #f params 'utf-8)))
 
 (define (draft-path cred)
   #`"/,(ref cred 'username)/atom/draft")
@@ -323,15 +297,6 @@
 	(sxml:change-content entry `((title ,title)
 								 (content ,content (@ (type "text/plain")))
 								 (updated ,(date->string updated "~4"))))))
-
-(define-method blog-date->string ((date <top>))
-  (x->string date))
-
-(define-method blog-date->string ((date <string>))
-  date)
-
-(define-method blog-date->string ((date <date>))
-  (date->string date "~Y~m~d"))
 
 (define (call/wsse->sxml cred method path :key (request-sxml #f) (params #f) (opts '()))
   (define (call)
@@ -375,90 +340,6 @@
 		   :status status :headers headers :body body
 		   body)))
 
-;;
-;; web (Special feature)
-;;
-
-(define (web-login cred)
-  (define (call)
-	(let1 query (http-compose-query #f (list 
-										(list :name (ref cred 'username)) 
-										(list :password (ref cred 'password)))
-									'utf-8)
-	  (web-post "www.hatena.ne.jp" "/login" query :no-redirect #t)))
-
-  (define (retrieve status headers body)
-	(unless (string=? status "200")
-	  (error <hatena-api-error>
-			 :status status :headers headers :body body
-			 body))
-	headers)
-
-  ;; create cookie string
-  (string-join
-   (construct-cookie-string
-	(filter
-	 (lambda (c)
-	   (and (string? (car c))
-			(member (car c) '("b" "rk"))))
-	 (concatenate
-	  (map
-	   (lambda (c)
-		 (parse-cookie-string (list-ref c 1)))
-	   (filter (lambda (x)
-				 (and (pair? x)
-					  (string-ci=? (car x) "set-cookie")))
-			   (call-with-values call retrieve))))))
-   "; "))
-
-(define (web-logout cookie)
-  (define (call)
-	(web-get "www.hatena.ne.jp" "/logout" 
-			  :no-redirect #t
-			  :Cookie cookie))
-
-  (define (retrieve status headers body)
-	(unless (string=? status "200")
-	  (error <hatena-api-error>
-			 :status status :headers headers :body body
-			 body))
-
-	headers)
-
-  (call-with-values call retrieve))
-
-(define (web-post . args)
-  (apply http-post args))
-
-(define (web-get . args)
-  (apply http-get args))
-
-;;TODO https
-;;FIXME cannot read no entry-id entry
-(define (web-hatena-text/title&contents cred cookie date entry-id)
-  (define (call)
-	(let ((user (ref cred 'username))
-		  (date-id (blog-date->string date))
-		  (entry-id (or entry-id "")))
-	  (web-get "d.hatena.ne.jp" 
-			   #`"/,|user|/,|date-id|/,|entry-id|?mode=json&now=,(hatena-now)" 
-			   :no-redirect #t
-			   :Cookie cookie)))
-	
-  (define (retrieve status headers body)
-	(unless (string=? status "200")
-	  (error <hatena-api-error>
-			 :status status :headers headers :body body
-			 body))
-
-	(let1 alist (parse-json-string (ces-convert body 'euc-jp (gauche-character-encoding)))
-	  (values (assoc-ref alist "title") (assoc-ref alist "body"))))
-
-  (call-with-values call retrieve))
-
-(define (hatena-now)
-  (* (sys-time) 1000))
-
 (define hatena-diary/sxml                    diary/sxml                )
 (define hatena-diary/draft/sxml              diary/draft/sxml          )
 (define hatena-diary/draft/get/sxml          diary/draft/get/sxml      )
@@ -481,4 +362,3 @@
 (define hatena-diary/draft/entries           diary/draft/entries       )
 (define hatena-diary/blog/entries            diary/blog/entries        )
 
-(provide "net/hatena/diary")
