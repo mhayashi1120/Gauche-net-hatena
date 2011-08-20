@@ -362,4 +362,3 @@
 (define hatena-diary/draft/entries           diary/draft/entries       )
 (define hatena-diary/blog/entries            diary/blog/entries        )
 
-(provide "net/hatena/diary")
