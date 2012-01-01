@@ -26,6 +26,7 @@
    diary-post
 
    diary-newest-log diary-today-log
+   diary-today-log$
   ))
 (select-module net.hatena.diary.web)
 
@@ -122,6 +123,8 @@
   (with-web-session cred cookie
     (retrieve-log-page cred cookie 1)))
 
+;; for small log size only
+;; *** DO NOT USE *** this function for too many access blog.
 (define (diary-today-log cred)
   (with-web-session cred cookie
     (let loop ((res '())
@@ -133,6 +136,17 @@
           (sort (delete-duplicates (append res log))
                 (^ (x y) (string>? (car x) (car y)))))))))
 
+;; lazy log parser.
+;; for log entry too many.
+(define (diary-today-log$ cred :optional (page #f))
+  (with-web-session cred cookie
+    (receive (log next)
+        (retrieve-log-page cred cookie (or page 1))
+      (append log
+              (if next
+                (lazy (diary-today-log$ cred next))
+                '())))))
+      
 ;;
 ;; Low level API
 ;;
@@ -404,8 +418,7 @@
 
   (define %log-row-parser
     ($many %table-item))
-
-
+  
   (let* ((p (open-input-string html))
          (table (peg-parse-port %log-table-parser p))
          (log (peg-parse-string %log-row-parser table)))
