@@ -19,7 +19,9 @@
    diary-log
    diary-list
    diary-text/title&contents
-   
+
+   diary-draft-preview
+
    diary-upload-file/json
 
    diary-entry
@@ -43,8 +45,7 @@
 (define-macro (with-web-session cred cookie . body)
   `(let1 ,cookie (web-login ,cred)
 	 (unwind-protect
-	  (begin
-		,@body)
+	  (begin ,@body)
 	  (web-logout ,cookie))))
 
 ;;
@@ -68,7 +69,7 @@
 
     (define (retrieve status headers body)
       (check-status status headers body)
-      (values (parse-json-string (code-convert body)) headers))
+      (values (parse-json-string (decode-string body)) headers))
 
     (call-with-values call retrieve)))
 
@@ -77,21 +78,47 @@
 (define (diary-text/title&contents cred date entry-id)
   (with-web-session cred cookie
     (define (call)
-      (let ((user (ref cred 'username))
-            (date-id (blog-date->string date))
-            (entry-id (or entry-id "")))
-        (web-get cookie
-                 hatena-host
-                 #`"/,|user|/,|date-id|/,|entry-id|?mode=json&now=,(hatena-now)")))
+      (let* ([user (ref cred 'username)]
+             [date-id (blog-date->string date)]
+             [entry-id (or entry-id "")]
+             [url #`"/,|user|/,|date-id|/,|entry-id|?mode=json&now=,(hatena-now)"])
+        (web-get cookie hatena-host url)))
 	
     (define (retrieve status headers body)
       (check-status status headers body)
 
-      (let1 alist (parse-json-string (code-convert body))
+      (let1 alist (parse-json-string (decode-string body))
         ;;TODO about newline
         (values (assoc-ref alist "title")
                 (string-append (assoc-ref alist "body") "\n"))))
 
+    (call-with-values call retrieve)))
+
+(define (diary-draft-preview cred title body)
+  (with-web-session cred cookie
+    (define (call)
+      (let* ([tm (current-date)]
+             [year (date-year tm)]
+             [month (date-month tm)]
+             [day (date-day tm)]
+             [mode "enter"]
+             [rkm (rkm-value cookie)]
+             ;; 多分無視される項目。
+             ;; "確認する" が元の値
+             [preview "any"]
+             [title (encode-string title)]
+             [body (encode-string body)]
+             [params (make-query-params 
+                      title body mode rkm preview
+                      year month day)]
+             [url #`"/,(ref cred 'username)/draft"])
+
+        (web-post cookie hatena-host url params)))
+
+    (define (retrieve status headers body)
+      (check-status status headers body)
+      (values (decode-string body) headers))
+    
     (call-with-values call retrieve)))
 
 (define (diary-log cred :optional when)
@@ -203,6 +230,7 @@
      (base64-encode-string
       (md5-digest-string string))
      0 22))
+
   (and-let* ((c (parse-cookie-string cookie))
              (rk (assoc "rk" c)))
     (md5-base64 (cadr rk))))
@@ -221,8 +249,11 @@
            :status status :headers headers :body body
            body)))
 
-(define (code-convert body)
-  (ces-convert body hatena-encoding (gauche-character-encoding)))
+(define (decode-string str)
+  (ces-convert str hatena-encoding (gauche-character-encoding)))
+
+(define (encode-string str)
+  (ces-convert str #f hatena-encoding))
 
 ;;
 ;; experimental
@@ -472,7 +503,7 @@
     (define (retrieve status headers body)
       (check-status status headers body)
       (peg-parse-string %html-textarea 
-                        (code-convert body)))
+                        (decode-string body)))
 
     (call-with-values call retrieve)))
 
@@ -497,7 +528,7 @@
 
     (define (retrieve status headers body)
       (check-status status headers body)
-      (code-convert body))
+      (decode-string body))
 
     (call-with-values call retrieve)))
 
