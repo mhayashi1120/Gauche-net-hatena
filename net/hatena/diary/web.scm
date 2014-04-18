@@ -232,7 +232,7 @@
 
 (define (web-logout cookie)
   (define (call)
-    (web-get cookie "www.hatena.ne.jp" "/logout"))
+    (web-get cookie "www.hatena.ne.jp" "/logout" :secure #t))
 
   (define (retrieve status headers body)
     (check-status status headers body)
@@ -539,9 +539,9 @@
 (define (diary-list cred :optional (page #f))
   (with-web-session cred cookie
     (define (call)
-      (let* ((mid page)
-             (mode "edit")
-             (params (make-query-params mode mid)))
+      (let* ([mid page]
+             [mode "edit"]
+             [params (make-query-params mode mid)])
         (web-get cookie hatena-host
                  #`"/,(ref cred 'username)/archive?,(compose-query params)")))
 
@@ -555,13 +555,13 @@
 (define (read-as-bytes file)
   (use gauche.uvector)
   (let1 f (open-input-file file)
-    (let loop ((c (read-byte f))
-               (res '()))
+    (let loop ([c (read-byte f)]
+               [res '()])
       (cond
-       ((eof-object? c)
-        (u8vector->string (list->u8vector (reverse res))))
-       (else
-        (loop (read-byte f) (cons c res)))))))
+       [(eof-object? c)
+        (u8vector->string (list->u8vector (reverse res)))]
+       [else
+        (loop (read-byte f) (cons c res))]))))
 
 (define (hatena-now)
   (* (sys-time) 1000))

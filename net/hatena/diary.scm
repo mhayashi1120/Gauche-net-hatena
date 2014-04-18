@@ -88,6 +88,7 @@
 (define-class <hatena-cred> ()
   ((username :init-keyword :username)
    (password :init-keyword :password)
+   (api-token :init-keyword :api-token)
    (group :init-keyword :group :init-value #f)))
 
 (define-class <hatena-blog-entry> ()
@@ -238,12 +239,12 @@
 			(car obj))))))
 
 (define (create-entries cred draft? . opts)
-  (let* ((method (if draft? 
+  (let* ([method (if draft? 
 				   diary/draft/sxml
-				   diary/blog/sxml))
-		 (idparser (if draft?
+				   diary/blog/sxml)]
+		 [idparser (if draft?
 					 (lambda (id) (values #f (diary-parse-draft-id id)))
-					 diary-parse-blog-id)))
+					 diary-parse-blog-id)])
 	(let1 sxml (apply method cred opts)
 	  (map
 	   (lambda (entry)
@@ -300,9 +301,9 @@
 
 (define (call/wsse->sxml cred method path :key (request-sxml #f) (params #f) (opts '()))
   (define (call)
-	(let ((wsse (wsse-header (ref cred 'username) (ref cred 'password)))
-		  (host (or (and (ref cred 'group) #`"(ref cred 'group).g.hatena.ne.jp")
-					"d.hatena.ne.jp")))
+	(let ([wsse (wsse-header (ref cred 'username) (ref cred 'api-token))]
+		  [host (or (and (ref cred 'group) #`"(ref cred 'group).g.hatena.ne.jp")
+					"d.hatena.ne.jp")])
 	  (case method
 		[(get) (apply http-get host (create-query-path)
 					  :X-WSSE wsse opts)]
