@@ -54,16 +54,16 @@
 (define-method blog-date->string ((date <date>))
   (date->string date "~Y~m~d"))
 
-(define (wsse-header username password)
-  (let ((created (date->string (current-date) "~4"))
-		(nonce (let1 s (make <mersenne-twister> :seed (sys-time))
+(define (wsse-header username token)
+  (let ([created (date->string (current-date) "~4")]
+		[nonce (let1 s (make <mersenne-twister> :seed (sys-time))
 				 (let1 v (make-u32vector 10)
 				   (mt-random-fill-u32vector! s v)
-				   (u32vector->string v)))))
+				   (u32vector->string v)))])
 	(format
 	 "UsernameToken Username=\"~a\", PasswordDigest=\"~a\", Nonce=\"~a\", Created=\"~a\""
 	 username
-	 (base64-encode-string (sha1-digest-string (string-append nonce created password)))
+	 (base64-encode-string (sha1-digest-string (string-append nonce created token)))
 	 (base64-encode-string nonce)
 	 created)))
 

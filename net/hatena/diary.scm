@@ -88,6 +88,7 @@
 (define-class <hatena-cred> ()
   ((username :init-keyword :username)
    (password :init-keyword :password)
+   (api-token :init-keyword :api-token)
    (group :init-keyword :group :init-value #f)))
 
 (define-class <hatena-blog-entry> ()
@@ -238,12 +239,12 @@
 			(car obj))))))
 
 (define (create-entries cred draft? . opts)
-  (let* ((method (if draft? 
+  (let* ([method (if draft? 
 				   diary/draft/sxml
-				   diary/blog/sxml))
-		 (idparser (if draft?
+				   diary/blog/sxml)]
+		 [idparser (if draft?
 					 (lambda (id) (values #f (diary-parse-draft-id id)))
-					 diary-parse-blog-id)))
+					 diary-parse-blog-id)])
 	(let1 sxml (apply method cred opts)
 	  (map
 	   (lambda (entry)
@@ -300,9 +301,9 @@
 
 (define (call/wsse->sxml cred method path :key (request-sxml #f) (params #f) (opts '()))
   (define (call)
-	(let ((wsse (wsse-header (ref cred 'username) (ref cred 'password)))
-		  (host (or (and (ref cred 'group) #`"(ref cred 'group).g.hatena.ne.jp")
-					"d.hatena.ne.jp")))
+	(let ([wsse (wsse-header (ref cred 'username) (ref cred 'api-token))]
+		  [host (or (and (ref cred 'group) #`"(ref cred 'group).g.hatena.ne.jp")
+					"d.hatena.ne.jp")])
 	  (case method
 		[(get) (apply http-get host (create-query-path)
 					  :X-WSSE wsse opts)]
@@ -340,25 +341,25 @@
 		   :status status :headers headers :body body
 		   body)))
 
-(define hatena-diary/sxml                    diary/sxml                )
-(define hatena-diary/draft/sxml              diary/draft/sxml          )
-(define hatena-diary/draft/get/sxml          diary/draft/get/sxml      )
-(define hatena-diary/draft/post/sxml         diary/draft/post/sxml     )
-(define hatena-diary/draft/put/sxml          diary/draft/put/sxml      )
-(define hatena-diary/draft/delete            diary/draft/delete        )
-(define hatena-diary/draft/title&contents    diary/draft/title&contents)
-(define hatena-diary/draft/publish/sxml      diary/draft/publish/sxml  )
-(define hatena-diary/blog/sxml               diary/blog/sxml           )
-(define hatena-diary/blog/get/sxml           diary/blog/get/sxml       )
-(define hatena-diary/blog/post/sxml          diary/blog/post/sxml      )
-(define hatena-diary/blog/put/sxml           diary/blog/put/sxml       )
-(define hatena-diary/blog/delete             diary/blog/delete         )
-(define hatena-diary/draft/post/id           diary/draft/post/id       )
-(define hatena-diary/blog/post/id            diary/blog/post/id        )
-(define hatena-diary/draft/publish/id        diary/draft/publish/id    )
-(define hatena-diary/blog/title&contents     diary/blog/title&contents )
-(define hatena-diary-parse-blog-id           diary-parse-blog-id       )
-(define hatena-diary-parse-draft-id          diary-parse-draft-id      )
-(define hatena-diary/draft/entries           diary/draft/entries       )
-(define hatena-diary/blog/entries            diary/blog/entries        )
+(define hatena-diary/sxml diary/sxml)
+(define hatena-diary/draft/sxml diary/draft/sxml)
+(define hatena-diary/draft/get/sxml diary/draft/get/sxml)
+(define hatena-diary/draft/post/sxml diary/draft/post/sxml)
+(define hatena-diary/draft/put/sxml diary/draft/put/sxml)
+(define hatena-diary/draft/delete diary/draft/delete)
+(define hatena-diary/draft/title&contents diary/draft/title&contents)
+(define hatena-diary/draft/publish/sxml diary/draft/publish/sxml)
+(define hatena-diary/blog/sxml diary/blog/sxml)
+(define hatena-diary/blog/get/sxml diary/blog/get/sxml)
+(define hatena-diary/blog/post/sxml diary/blog/post/sxml)
+(define hatena-diary/blog/put/sxml diary/blog/put/sxml)
+(define hatena-diary/blog/delete diary/blog/delete)
+(define hatena-diary/draft/post/id diary/draft/post/id)
+(define hatena-diary/blog/post/id diary/blog/post/id)
+(define hatena-diary/draft/publish/id diary/draft/publish/id)
+(define hatena-diary/blog/title&contents diary/blog/title&contents)
+(define hatena-diary-parse-blog-id diary-parse-blog-id)
+(define hatena-diary-parse-draft-id diary-parse-draft-id)
+(define hatena-diary/draft/entries diary/draft/entries)
+(define hatena-diary/blog/entries diary/blog/entries)
 

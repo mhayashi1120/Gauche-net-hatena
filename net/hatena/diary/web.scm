@@ -19,14 +19,16 @@
    diary-log
    diary-list
    diary-text/title&contents
-   
+
+   diary-draft-preview
+
    diary-upload-file/json
 
    diary-entry
    diary-post
 
    diary-newest-log diary-today-log
-   diary-today-log$
+   diary-today-log$ diary-recent-log$
   ))
 (select-module net.hatena.diary.web)
 
@@ -43,8 +45,7 @@
 (define-macro (with-web-session cred cookie . body)
   `(let1 ,cookie (web-login ,cred)
 	 (unwind-protect
-	  (begin
-		,@body)
+	  (begin ,@body)
 	  (web-logout ,cookie))))
 
 ;;
@@ -68,7 +69,7 @@
 
     (define (retrieve status headers body)
       (check-status status headers body)
-      (values (parse-json-string (code-convert body)) headers))
+      (values (parse-json-string (decode-string body)) headers))
 
     (call-with-values call retrieve)))
 
@@ -77,21 +78,47 @@
 (define (diary-text/title&contents cred date entry-id)
   (with-web-session cred cookie
     (define (call)
-      (let ((user (ref cred 'username))
-            (date-id (blog-date->string date))
-            (entry-id (or entry-id "")))
-        (web-get cookie
-                 hatena-host
-                 #`"/,|user|/,|date-id|/,|entry-id|?mode=json&now=,(hatena-now)")))
+      (let* ([user (ref cred 'username)]
+             [date-id (blog-date->string date)]
+             [entry-id (or entry-id "")]
+             [url #`"/,|user|/,|date-id|/,|entry-id|?mode=json&now=,(hatena-now)"])
+        (web-get cookie hatena-host url)))
 	
     (define (retrieve status headers body)
       (check-status status headers body)
 
-      (let1 alist (parse-json-string (code-convert body))
+      (let1 alist (parse-json-string (decode-string body))
         ;;TODO about newline
         (values (assoc-ref alist "title")
                 (string-append (assoc-ref alist "body") "\n"))))
 
+    (call-with-values call retrieve)))
+
+(define (diary-draft-preview cred title body)
+  (with-web-session cred cookie
+    (define (call)
+      (let* ([tm (current-date)]
+             [year (date-year tm)]
+             [month (date-month tm)]
+             [day (date-day tm)]
+             [mode "enter"]
+             [rkm (rkm-value cookie)]
+             ;; 多分無視される項目。
+             ;; "確認する" が元の値
+             [preview "any"]
+             [title (encode-string title)]
+             [body (encode-string body)]
+             [params (make-query-params 
+                      title body mode rkm preview
+                      year month day)]
+             [url #`"/,(ref cred 'username)/draft"])
+
+        (web-post cookie hatena-host url params)))
+
+    (define (retrieve status headers body)
+      (check-status status headers body)
+      (values (decode-string body) headers))
+    
     (call-with-values call retrieve)))
 
 (define (diary-log cred :optional when)
@@ -99,7 +126,7 @@
     (define (call)
       (let* ((cid 1)
              (mode "download")
-             (month (case when ((1) "prev") ((2) "prev2") (else "this")))
+             (month (case when [(1) "prev"] [(2) "prev2"] [else "this"]))
              (params (make-query-params cid mode month)))
         (web-get cookie hatena-cuonter-host
                  #`"/,(ref cred 'username)/downloadlog?,(compose-query params)")))
@@ -108,7 +135,7 @@
       (define (parse-filename)
         (if-let1 pair (assoc "content-disposition" headers)
           (cond
-           ((#/filename="([^"]+)"/ (cadr pair)) =>
+           ((#/filename="([^\"]+)\"/ (cadr pair)) =>
             (lambda (m) (m 1)))
            ((#/filename=(.+)/ (cadr pair)) =>
             (lambda (m) (m 1))))))
@@ -121,7 +148,7 @@
 ;; TODO FQDN to IP address.
 (define (diary-newest-log cred)
   (with-web-session cred cookie
-    (retrieve-log-page cred cookie 1)))
+    (retrieve-log-page cred cookie (current-date) 1)))
 
 ;; for small log size only
 ;; *** DO NOT USE *** this function for too many access blog.
@@ -130,23 +157,39 @@
     (let loop ((res '())
                (page 1))
       (receive (log next)
-          (retrieve-log-page cred cookie page)
+          (retrieve-log-page cred cookie (current-date) page)
         (if next
           (loop (append res log) next)
           (sort (delete-duplicates (append res log))
                 (^ (x y) (string>? (car x) (car y)))))))))
 
-;; lazy log parser.
-;; for log entry too many.
+;; lazy log parser. Allows you to handle too many log.
 (define (diary-today-log$ cred :optional (page #f))
   (with-web-session cred cookie
     (receive (log next)
-        (retrieve-log-page cred cookie (or page 1))
+        (retrieve-log-page cred cookie (current-date) (or page 1))
       (append log
               (if next
                 (lazy (diary-today-log$ cred next))
                 '())))))
       
+;; lazy log parser. Allows you to handle too many log.
+(define (diary-recent-log$ cred :optional (date (current-date)) (page #f))
+  (with-web-session cred cookie
+    (receive (log next)
+        (retrieve-log-page cred cookie date (or page 1))
+      (append log
+              (cond
+               [next
+                (lazy (diary-recent-log$ cred date next))]
+               [(let1 yest (date-add-days date -1)
+                  (and (< (diff-days (current-date) yest) 3)
+                       yest)) => 
+                    (^ (yest) 
+                      (lazy (diary-recent-log$ cred yest)))]
+               [else
+                '()])))))
+
 ;;
 ;; Low level API
 ;;
@@ -189,7 +232,7 @@
 
 (define (web-logout cookie)
   (define (call)
-    (web-get cookie "www.hatena.ne.jp" "/logout"))
+    (web-get cookie "www.hatena.ne.jp" "/logout" :secure #t))
 
   (define (retrieve status headers body)
     (check-status status headers body)
@@ -203,6 +246,7 @@
      (base64-encode-string
       (md5-digest-string string))
      0 22))
+
   (and-let* ((c (parse-cookie-string cookie))
              (rk (assoc "rk" c)))
     (md5-base64 (cadr rk))))
@@ -221,8 +265,11 @@
            :status status :headers headers :body body
            body)))
 
-(define (code-convert body)
-  (ces-convert body hatena-encoding (gauche-character-encoding)))
+(define (decode-string str)
+  (ces-convert str hatena-encoding (gauche-character-encoding)))
+
+(define (encode-string str)
+  (ces-convert str #f hatena-encoding))
 
 ;;
 ;; experimental
@@ -262,10 +309,10 @@
    (referer :init-keyword :referer)
    ))
 
-(define (retrieve-log-page cred cookie page)
+(define (retrieve-log-page cred cookie date page)
   (define (call)
     (let* ((cid 1)
-           (date (date->string (current-date) "~Y-~m-~d"))
+           (date (date->string date "~Y-~m-~d"))
            (type "daily")
            (params (make-query-params page cid date type)))
       (web-get cookie hatena-cuonter-host
@@ -341,7 +388,9 @@
     ($try
      ($seq
       ($s "</")
+      %ws
       ($string-ci tag)
+      %ws
       ($c #\>))))
 
   (define ($cell p)
@@ -419,16 +468,17 @@
   (define %log-row-parser
     ($many %table-item))
   
-  (let* ((p (open-input-string html))
-         (table (peg-parse-port %log-table-parser p))
-         (log (peg-parse-string %log-row-parser table)))
+  (let* ([s (string-incomplete->complete html #\〓)]
+         [p (open-input-string s)]
+         [table (peg-parse-port %log-table-parser p)]
+         [log (peg-parse-string %log-row-parser table)])
     (port-seek p 0)
     (let1 next
         (let loop ((l (read-line p)))
           (cond
            ((eof-object? l) #f)
            ;; magic word
-           ((#/<a[ \t]+href=".*page=([0-9]+).*>次の[0-9]+件/ l) =>
+           ((#/<a[ \t]+href=\".*page=([0-9]+).*>次の[0-9]+件/ l) =>
             (^m (string->number (m 1))))
            (else
             (loop (read-line p)))))
@@ -472,7 +522,7 @@
     (define (retrieve status headers body)
       (check-status status headers body)
       (peg-parse-string %html-textarea 
-                        (code-convert body)))
+                        (decode-string body)))
 
     (call-with-values call retrieve)))
 
@@ -489,15 +539,15 @@
 (define (diary-list cred :optional (page #f))
   (with-web-session cred cookie
     (define (call)
-      (let* ((mid page)
-             (mode "edit")
-             (params (make-query-params mode mid)))
+      (let* ([mid page]
+             [mode "edit"]
+             [params (make-query-params mode mid)])
         (web-get cookie hatena-host
                  #`"/,(ref cred 'username)/archive?,(compose-query params)")))
 
     (define (retrieve status headers body)
       (check-status status headers body)
-      (code-convert body))
+      (decode-string body))
 
     (call-with-values call retrieve)))
 
@@ -505,14 +555,27 @@
 (define (read-as-bytes file)
   (use gauche.uvector)
   (let1 f (open-input-file file)
-    (let loop ((c (read-byte f))
-               (res '()))
+    (let loop ([c (read-byte f)]
+               [res '()])
       (cond
-       ((eof-object? c)
-        (u8vector->string (list->u8vector (reverse res))))
-       (else
-        (loop (read-byte f) (cons c res)))))))
+       [(eof-object? c)
+        (u8vector->string (list->u8vector (reverse res)))]
+       [else
+        (loop (read-byte f) (cons c res))]))))
 
 (define (hatena-now)
   (* (sys-time) 1000))
 
+(define (date-add-days date days)
+  (time-utc->date
+   (add-duration
+    (date->time-utc date)
+    (make-time time-duration 0 (* (* 24 60 60) days)))))
+
+(define (diff-days date1 date2)
+  (quotient (diff-seconds date1 date2) (* 24 60 60)))
+
+(define (diff-seconds date1 date2)
+  (time-second
+   (time-difference
+    (date->time-utc date1) (date->time-utc date2))))
